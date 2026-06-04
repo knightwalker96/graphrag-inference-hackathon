@@ -618,6 +618,18 @@ with tab_live:
 
     st.markdown('</div></div>', unsafe_allow_html=True)
 
+    # Live Query runs the pipelines on demand and needs the local vector + knowledge-graph
+    # indexes and API keys. These are gitignored (too large), so they aren't on the hosted
+    # demo — show a guide instead of crashing, and point users to the Benchmark Results tab.
+    _live_ready = Path(config.CHROMA_PERSIST_DIR).exists()
+    if not _live_ready:
+        st.info(
+            "ℹ️ **Live Query runs all three pipelines on demand** — it needs the local vector + "
+            "knowledge-graph indexes and API keys, so it works when you run the app locally "
+            "(`streamlit run app.py`). **This hosted demo showcases the Benchmark Results tab → "
+            "the full pre-computed three-pipeline comparison.**"
+        )
+
     st.markdown(
         """
         <div class="center-shell" style="margin-top:1rem;">
@@ -643,7 +655,7 @@ with tab_live:
         unsafe_allow_html=True,
     )
 
-    if run_query_clicked and query.strip():
+    if run_query_clicked and query.strip() and _live_ready:
         import pipeline1_llm_only as p1
         import pipeline2_basic_rag as p2
         import pipeline3_tigergraph_cloud.pipeline as p3
