@@ -9,9 +9,17 @@
 #   build_entity_index_gemini.py -> pipeline3_<dataset>/index/  (Gemini knowledge graph)
 chroma_db/
 chroma_db_*/
-pipeline3_bioasq/
 pipeline3_gemini/
 .trash_results/
+
+# KG index: ship the files the hosted app needs for Pipeline 3 (skip the big corpus.json dup)
+pipeline3_bioasq/*
+!pipeline3_bioasq/index/
+pipeline3_bioasq/index/*
+!pipeline3_bioasq/index/doc_content.json
+!pipeline3_bioasq/index/entity_to_docs.json
+!pipeline3_bioasq/index/entity_types.json
+!pipeline3_bioasq/index/relationships.json
 
 # Separate all-datasets archive + backups (kept locally, not committed)
 *.zip

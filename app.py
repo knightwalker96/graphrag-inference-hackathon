@@ -9,6 +9,7 @@ Shows Pipeline 1 vs Pipeline 2 vs Pipeline 3 side-by-side:
 Run with: streamlit run app.py  (from the project root)
 """
 
+import os
 import json
 import base64
 import re
@@ -16,6 +17,19 @@ from pathlib import Path
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+
+# On Streamlit Cloud, surface secrets as env vars BEFORE importing config so config + the
+# pipelines (which read os.getenv) pick up the API keys, LLM provider, embedder, and
+# TigerGraph creds. Set these in the app's "Secrets" settings:
+#   OPENAI_API_KEY, HF_TOKEN, TIGERGRAPH_HOST, TIGERGRAPH_SECRET, TIGERGRAPH_GRAPH=bioasq,
+#   TIGERGRAPH_USERNAME, TIGERGRAPH_PASSWORD, EMBEDDING_MODEL=all-MiniLM-L6-v2
+try:
+    for _k, _v in st.secrets.items():
+        os.environ.setdefault(_k, str(_v))
+except Exception:
+    pass
+os.environ.setdefault("LLM_PROVIDER", "openai")            # hosted container has no local Ollama
+os.environ.setdefault("EMBEDDING_MODEL", "all-MiniLM-L6-v2")  # lighter than PubMedBERT (RAM)
 
 import config
 
@@ -535,7 +549,17 @@ st.html(
 
 @st.cache_resource
 def load_vectorstore():
-    from chroma_store import load_vectorstore as _load
+    """Load the ChromaDB index; on the hosted/first run, build it from the shipped KG docs."""
+    from chroma_store import load_vectorstore as _load, build_vectorstore
+    if not Path(config.CHROMA_PERSIST_DIR).exists():
+        idx = Path(os.getenv("P3_INDEX_DIR", config.ds_paths()["index_dir"])) / "doc_content.json"
+        from langchain_core.documents import Document
+        with st.spinner("First run — building the vector index (one-time, ~1–2 min)…"):
+            dc = json.load(open(idx))
+            cap = int(os.getenv("HOSTED_MAX_DOCS", "8000"))   # keep the hosted build fast + light
+            docs = [Document(page_content=t, metadata={"title": d})
+                    for d, t in list(dc.items())[:cap]]
+            build_vectorstore(docs)
     return _load()
 
 
@@ -618,18 +642,6 @@ with tab_live:
 
     st.markdown('</div></div>', unsafe_allow_html=True)
 
-    # Live Query runs the pipelines on demand and needs the local vector + knowledge-graph
-    # indexes and API keys. These are gitignored (too large), so they aren't on the hosted
-    # demo — show a guide instead of crashing, and point users to the Benchmark Results tab.
-    _live_ready = Path(config.CHROMA_PERSIST_DIR).exists()
-    if not _live_ready:
-        st.info(
-            "ℹ️ **Live Query runs all three pipelines on demand** — it needs the local vector + "
-            "knowledge-graph indexes and API keys, so it works when you run the app locally "
-            "(`streamlit run app.py`). **This hosted demo showcases the Benchmark Results tab → "
-            "the full pre-computed three-pipeline comparison.**"
-        )
-
     st.markdown(
         """
         <div class="center-shell" style="margin-top:1rem;">
@@ -655,7 +667,7 @@ with tab_live:
         unsafe_allow_html=True,
     )
 
-    if run_query_clicked and query.strip() and _live_ready:
+    if run_query_clicked and query.strip():
         import pipeline1_llm_only as p1
         import pipeline2_basic_rag as p2
         import pipeline3_tigergraph_cloud.pipeline as p3
