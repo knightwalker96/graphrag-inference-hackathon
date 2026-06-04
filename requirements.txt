@@ -1,0 +1,41 @@
+# Core LangChain
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+langchain-ollama>=0.1.0
+langchain-chroma>=0.1.0
+langchain-text-splitters>=0.2.0
+
+# Vector Store
+chromadb>=0.5.0
+
+# Embeddings (local, free — all-mpnet-base-v2 auto-downloaded on first run)
+sentence-transformers>=3.0.0
+
+# Dataset
+datasets>=2.20.0
+
+# Token counting
+tiktoken>=0.7.0
+
+# Evaluation
+evaluate>=0.4.0
+bert-score>=0.3.13
+huggingface-hub>=0.23.0
+
+# Dashboard
+streamlit>=1.35.0
+pandas>=2.2.0
+plotly>=5.22.0
+
+# Utilities
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+numpy>=1.26.0
+
+# Pipeline 3: GraphRAG (TigerGraph Cloud)
+spacy>=3.7.0
+pyTigerGraph>=1.0.0
+
+# Optional answering LLM provider (used when LLM_PROVIDER=openai)
+openai>=1.0.0
