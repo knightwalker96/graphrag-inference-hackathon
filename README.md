@@ -8,13 +8,13 @@ questions; the numbers tell the story: **GraphRAG cuts tokens ~50% vs Basic RAG 
 
 | Pipeline | LLM-as-a-Judge | BERTScore | Avg tokens |
 |---|---|---|---|
-| P1 — LLM-Only | 90% | 0.386 | 183 |
-| P2 — Basic RAG | 90% | 0.353 | 3,372 |
-| **P3 — GraphRAG (TigerGraph)** | **98%** | **0.405** | **1,715 (−49%)** |
+| P1 — LLM-Only | 90% | 0.388 | 182 |
+| P2 — Basic RAG | 86% | 0.355 | 3,375 |
+| **P3 — GraphRAG (TigerGraph)** | **94%** | **0.404** | **1,725 (−49%)** |
 
-Basic RAG (vector) doesn't improve on the raw LLM here — both 90% — because vector search
-retrieves similar chunks but can't reason across relationships. **GraphRAG's multi-hop graph
-traversal lifts accuracy to 98% at half the tokens** — capturing what vector search misses.
+Basic RAG (vector) actually trails the raw LLM here (86% vs 90%) — vector search retrieves
+similar chunks but can't reason across relationships. **GraphRAG's multi-hop graph traversal
+lifts accuracy to 94% at half the tokens** — capturing what vector search misses.
 
 ## The three pipelines
 
@@ -76,6 +76,16 @@ DATASET=bioasq python run_benchmark.py
 # 5. Launch the side-by-side comparison dashboard
 streamlit run app.py
 ```
+
+## Dashboard
+
+`streamlit run app.py` opens an interactive comparison dashboard with two tabs:
+
+- **Live Query** — type any question; all three pipelines answer it live and show their
+  answers + per-query tokens, latency, cost, and chunks retrieved, side by side.
+- **Benchmark Results** — loads `results/benchmark_results.json` (written by every
+  `run_benchmark.py` run) and renders the full comparison: accuracy (LLM-judge + BERTScore),
+  token/latency charts, the BERTScore distribution, and per-question breakdowns.
 
 ## Evaluation (per the hackathon spec)
 

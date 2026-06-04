@@ -14,6 +14,7 @@ import json
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -509,14 +510,22 @@ def run_single(
     _load_local_index()
     t_start = time.perf_counter()  # start BEFORE TigerGraph BFS
 
-    ner_seeds = _extract_entities(question)
-    if not ner_seeds:
-        ner_seeds = _keyword_fallback(question)
-    # Filter hub entities from NER seeds (same threshold as chroma seeds)
-    ner_seeds = [e for e in ner_seeds if _entity_mentions.get(e, 0) <= HUB_MENTION_THRESHOLD]
+    # NER, ChromaDB retrieval and title-matching are independent — run them concurrently
+    # so only the TigerGraph BFS (which needs the seeds) stays on the critical path.
+    def _ner_seeds():
+        seeds = _extract_entities(question) or _keyword_fallback(question)
+        return [e for e in seeds if _entity_mentions.get(e, 0) <= HUB_MENTION_THRESHOLD]
 
-    chroma_ids   = _chroma_doc_ids(question, vectorstore)
-    chroma_seeds = _chroma_entity_seeds(chroma_ids)
+    def _chroma():
+        cids = _chroma_doc_ids(question, vectorstore)
+        return cids, _chroma_entity_seeds(cids)
+
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        f_ner, f_chroma = ex.submit(_ner_seeds), ex.submit(_chroma)
+        f_title = ex.submit(_title_match_docs, question)
+        ner_seeds = f_ner.result()
+        chroma_ids, chroma_seeds = f_chroma.result()
+        title_ids = f_title.result()
 
     seed_entities = {*ner_seeds, *chroma_seeds}
     # Type filter for "where"/"who" questions reduces BFS noise
@@ -527,8 +536,6 @@ def run_single(
         top_k=15,
         expand_types=expand_types,
     )
-
-    title_ids = _title_match_docs(question)
 
     expected_types = _expected_answer_types(question)
     candidates = _score_and_retrieve(

@@ -40,7 +40,8 @@ results/*.log
 .claude/
 CLAUDE.md
 
-# Not for public repo
-results/
+# Not for public repo — only the final benchmark_results.json is shown
+results/*
+!results/benchmark_results.json
 SUBMISSION_RESULTS.md
 PROBLEM_STATEMENT.md
