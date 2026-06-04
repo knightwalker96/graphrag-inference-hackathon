@@ -4,6 +4,10 @@
 questions; the numbers tell the story: **GraphRAG cuts tokens ~50% vs Basic RAG while
 *improving* accuracy.**
 
+### 🚀 [Live demo →](https://knightwalker96-graphrag-inference-hackathon-app-k9q1vq.streamlit.app)
+Try the interactive dashboard on Streamlit Cloud — ask any question and watch all three
+pipelines answer side by side.
+
 ## 🏆 Headline — BioASQ (biomedical multi-hop QA)
 
 | Pipeline | LLM-as-a-Judge | BERTScore | Avg tokens |
@@ -66,7 +70,10 @@ streamlit run app.py
 
 ## Dashboard
 
-`streamlit run app.py` opens an interactive comparison dashboard with two tabs:
+**Live:** https://knightwalker96-graphrag-inference-hackathon-app-k9q1vq.streamlit.app
+(or run locally with `streamlit run app.py`).
+
+The interactive comparison dashboard has two tabs:
 
 - **Live Query** — type any question; all three pipelines answer it live and show their
   answers + per-query tokens, latency, cost, and chunks retrieved, side by side.
