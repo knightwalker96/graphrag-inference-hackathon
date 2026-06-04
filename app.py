@@ -611,7 +611,7 @@ with tab_live:
         label_visibility="collapsed",
         placeholder="Search anything...",
     )
-    run_query_clicked = st.button("Run Query", key="run_query_btn", width="stretch")
+    run_query_clicked = st.button("Run Query", key="run_query_btn", use_container_width=True)
 
     if run_query_clicked and not query.strip():
         st.warning("Please enter a question before running the query.")
@@ -790,7 +790,7 @@ with tab_benchmark:
                 hovertemplate="<b>%{x}</b><br>Tokens: %{y:,.0f}<extra></extra>",
             ))
             fig.update_layout(title_text="Average Total Tokens per Query", yaxis_title="Tokens", showlegend=False, **chart_layout)
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, use_container_width=True)
 
         with col2:
             fig = go.Figure(go.Bar(
@@ -801,7 +801,7 @@ with tab_benchmark:
                 hovertemplate="<b>%{x}</b><br>Latency: %{y:.2f}s<extra></extra>",
             ))
             fig.update_layout(title_text="Average Latency per Query", yaxis_title="Seconds", showlegend=False, **chart_layout)
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, use_container_width=True)
 
         # ── Accuracy ────────────────────────────────────────────────────────
         st.subheader("🎯 Accuracy Metrics")
@@ -837,7 +837,7 @@ with tab_benchmark:
                 ))
             fig.update_layout(barmode="overlay", xaxis_title="BERTScore F1 (rescaled)",
                               yaxis_title="Count", title_text="BERTScore F1 Distribution per Pipeline", **chart_layout)
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, use_container_width=True)
 
         # ── Per-question table ─────────────────────────────────────────────
         pipeline_keys = [k for k in ["pipeline3", "pipeline2", "pipeline1"] if k in results_data.get("per_question", {})]
