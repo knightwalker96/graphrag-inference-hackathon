@@ -26,23 +26,10 @@ lifts accuracy to 94% at half the tokens** — capturing what vector search miss
 
 ## Architecture
 
-```
-                          ┌──────────── question ────────────┐
-                          ▼                ▼                  ▼
-                   ┌───────────┐    ┌────────────┐    ┌─────────────────┐
-                   │ P1 LLM    │    │ P2 Basic   │    │ P3 GraphRAG     │
-                   │ only      │    │ RAG        │    │ (TigerGraph)    │
-                   └─────┬─────┘    └─────┬──────┘    └────────┬────────┘
-                         │                │ ChromaDB           │ TigerGraph Savanna
-                         │                │ vector + rerank    │ multi-hop BFS + rerank
-                         ▼                ▼                    ▼
-                       answer           answer               answer
-                          └──────── LLM-as-a-Judge + BERTScore + token/latency ───────┘
-                                              │
-                                      Streamlit dashboard (app.py)
-```
+![Architecture](architecture.png)
 
 Corpus → **ChromaDB** (P2 index) and → **Gemini KG extraction** → **TigerGraph Savanna** (P3 graph).
+Full source for the diagram: [`architecture.html`](architecture.html).
 
 ## Setup
 
