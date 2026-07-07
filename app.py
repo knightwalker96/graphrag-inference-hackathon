@@ -30,6 +30,10 @@ except Exception:
     pass
 os.environ.setdefault("LLM_PROVIDER", "openai")            # hosted container has no local Ollama
 os.environ.setdefault("EMBEDDING_MODEL", "all-MiniLM-L6-v2")  # lighter than PubMedBERT (RAM)
+# Benchmarks fail loud by default (P3_REQUIRE_TG=1). The interactive demo instead degrades
+# gracefully if the free Savanna instance is asleep — but the UI always shows the live-graph
+# status per query (tg_live), so a fallback is never misrepresented as a real GraphRAG result.
+os.environ.setdefault("P3_REQUIRE_TG", "0")
 
 import config
 
@@ -724,6 +728,26 @@ with tab_live:
                     st.write(f"Prompt tokens: {metrics.prompt_tokens:,}")
                     st.write(f"Completion tokens: {metrics.completion_tokens:,}")
 
+                # Live-graph provenance (reviewer #1c): prove the cloud graph was queried
+                # for this question — never let a fallback look like a real GraphRAG result.
+                if key == "p3":
+                    if getattr(metrics, "tg_live", False):
+                        st.success(
+                            f"🟢 Live TigerGraph queried — "
+                            f"{len(getattr(metrics, 'graph_doc_ids', []))} graph docs, "
+                            f"{getattr(metrics, 'graph_entity_count', 0)} entities"
+                        )
+                        if metrics.tg_host:
+                            st.caption(f"Graph host: `{metrics.tg_host}`")
+                        if metrics.graph_doc_ids:
+                            with st.expander("Documents returned by the graph"):
+                                st.write(", ".join(str(d) for d in metrics.graph_doc_ids[:30]))
+                    else:
+                        st.warning(
+                            "⚠️ Graph offline — vector-only fallback "
+                            "(not a true GraphRAG result)"
+                        )
+
         if len(st.session_state.live_results) > 1:
             st.divider()
             st.subheader("Side-by-side comparison")
@@ -734,6 +758,9 @@ with tab_live:
                     "Latency (s)": f"{m.latency_seconds:.2f}",
                     "Cost (USD)": f"${m.cost_usd:.6f}",
                     "Chunks": m.retrieved_chunks,
+                    "Live Graph": (f"🟢 {len(m.graph_doc_ids)} docs"
+                                   if getattr(m, "tg_live", False)
+                                   else "—"),
                 }
                 for m in st.session_state.live_results.values()
             ]))
@@ -763,9 +790,17 @@ with tab_benchmark:
             f"Questions evaluated: {cfg['n_questions']}"
         )
 
-        kc1, kc2 = st.columns(2)
+        kc1, kc2, kc3, kc4 = st.columns(4)
         with kc1: st.metric("Questions Evaluated", cfg["n_questions"])
         with kc2: st.metric("Top-K", cfg["top_k"])
+        # Live-graph proof (reviewer #1a/#1c): tg_live_rate == 1.0 means every GraphRAG
+        # answer in this benchmark was produced against the live TigerGraph cloud graph.
+        p3_perf = perf.get("pipeline3", {})
+        if "tg_live_rate" in p3_perf:
+            with kc3:
+                st.metric("P3 Live-Graph Rate", f"{p3_perf['tg_live_rate']:.0%}")
+            with kc4:
+                st.metric("P3 Avg Graph Docs", f"{p3_perf.get('avg_graph_docs', 0):.0f}")
 
         # ── Performance ────────────────────────────────────────────────────
         st.subheader("📈 Performance Metrics")
