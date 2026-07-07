@@ -26,6 +26,14 @@ CHUNK_OVERLAP = 200
 
 TOP_K = 10
 
+# --- Fair-comparison context budget (reviewer fix #2) ---
+# Basic RAG (P2) and GraphRAG (P3) use the SAME number of context items AND the
+# SAME per-item character cap, so neither pipeline is fed more text than the other.
+# 2000 chars covers the p90 of both P2 chroma chunks (~1817) and P3 docs (~2066),
+# so this is a generous "level-up" cap that leaves both essentially un-starved.
+CONTEXT_NUM_CHUNKS  = int(os.getenv("CONTEXT_NUM_CHUNKS", "10"))
+CONTEXT_CHUNK_CHARS = int(os.getenv("CONTEXT_CHUNK_CHARS", "2000"))
+
 HOTPOTQA_SPLIT = "train"
 MAX_DOCS_TO_INDEX = int(os.getenv("MAX_DOCS_TO_INDEX", "10000"))
 EVAL_SAMPLE_SIZE = 50

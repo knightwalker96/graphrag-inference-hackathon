@@ -43,9 +43,31 @@ TG_HUB_MAX = 100
 # Gemini relationship edges mostly have count=1, unlike spaCy co-occurrence (often >=5).
 # Set TG_MIN_CO_COUNT=1 when querying a Gemini-built graph.
 TG_MIN_CO_COUNT = int(os.getenv("TG_MIN_CO_COUNT", "5"))
-MAX_CHUNK_CHARS = 800
-MAX_CONTEXT_CHUNKS = int(os.getenv("MAX_CONTEXT_CHUNKS", "7"))
+# Equal-context budget (reviewer fix #2): default to the SAME item count + per-item
+# char cap that Basic RAG uses (config.CONTEXT_*), so neither pipeline is fed more.
+MAX_CHUNK_CHARS = int(os.getenv("MAX_CHUNK_CHARS", str(config.CONTEXT_CHUNK_CHARS)))
+MAX_CONTEXT_CHUNKS = int(os.getenv("MAX_CONTEXT_CHUNKS", str(config.CONTEXT_NUM_CHUNKS)))
 NUM_HOPS = int(os.getenv("NUM_HOPS", "1"))   # BFS depth for multi_hop_expand (set 2 for multi-hop datasets)
+
+# --- Graph weight (reviewer fix #1b) ---
+# How strongly a doc returned by the live graph BFS is boosted in retrieval scoring.
+# Was hard-coded 0.5 vs chroma's 5.0, making the graph "decorative". Now an env var
+# so we can sweep it (ablation) and give the graph enough weight to change retrieval.
+GRAPH_BOOST = float(os.getenv("GRAPH_BOOST", "4.0"))
+# Vector-search doc weight — was hard-coded 5.0. Exposed so graph and vector
+# signals can be balanced (e.g. CHROMA_BOOST=4 == GRAPH_BOOST=4 => equal say).
+CHROMA_BOOST = float(os.getenv("CHROMA_BOOST", "5.0"))
+
+# --- Fail-loud + honest ablation controls (reviewer fix #1a) ---
+# P3_DISABLE_GRAPH=1 -> fully bypass the graph (no BFS, no graph docs, no triples,
+#                     no bridge) for the graph-OFF arm of the ablation.
+P3_DISABLE_GRAPH = os.getenv("P3_DISABLE_GRAPH", "0") != "0"
+# P3_REQUIRE_TG is ON BY DEFAULT: if the live cloud graph is unreachable the run
+# aborts, so a "GraphRAG" result can NEVER be produced without the live graph.
+# It is auto-relaxed only when the graph is deliberately disabled for the ablation
+# (P3_DISABLE_GRAPH=1), where TigerGraph is intentionally not used. To knowingly
+# allow a vector-only fallback you must opt out explicitly with P3_REQUIRE_TG=0.
+P3_REQUIRE_TG = (os.getenv("P3_REQUIRE_TG", "1") != "0") and not P3_DISABLE_GRAPH
 GRAPH_BRIDGE_RESERVE = int(os.getenv("GRAPH_BRIDGE_RESERVE", "0"))  # ctx slots reserved for graph-traversed docs (bypass reranker demotion)
 CHROMA_ENTITY_SEED_LIMIT = 16
 
@@ -201,6 +223,21 @@ def _load_local_index() -> None:
     )
 
 
+def _fail_or_fallback(reason: str) -> None:
+    """Reviewer fix #1a: when P3_REQUIRE_TG is set, a GraphRAG result must be
+    impossible without the live graph — so abort loudly instead of silently
+    degrading to local-only retrieval."""
+    global _tg_available
+    if P3_REQUIRE_TG:
+        raise RuntimeError(
+            f"[p3-tg-cloud] Live TigerGraph is REQUIRED (P3_REQUIRE_TG=1) but {reason}. "
+            "Refusing to produce a GraphRAG result without the cloud graph. "
+            "Start/resume the Savanna instance and re-run."
+        )
+    print(f"[p3-tg-cloud] {reason} — falling back to local-only retrieval")
+    _tg_available = False
+
+
 def _get_connection() -> tg.TigerGraphConnection | None:
     global _conn, _tg_available
     if not _tg_available:
@@ -208,8 +245,7 @@ def _get_connection() -> tg.TigerGraphConnection | None:
     if _conn is not None:
         return _conn
     if not TG_HOST:
-        print("[p3-tg-cloud] TIGERGRAPH_HOST not set — running without cloud graph (local fallback)")
-        _tg_available = False
+        _fail_or_fallback("TIGERGRAPH_HOST not set")
         return None
     try:
         print(f"[p3-tg-cloud] Connecting to TigerGraph at {TG_HOST}…")
@@ -220,12 +256,15 @@ def _get_connection() -> tg.TigerGraphConnection | None:
             username=TG_USERNAME,
             password=TG_PASSWORD,
         )
+        # Force a real round-trip: constructing the object is lazy and does NOT
+        # prove the cloud graph is up. echo() hits the live REST endpoint, so a
+        # paused/dead instance is caught here (and aborts under P3_REQUIRE_TG).
+        conn.echo()
         _conn = conn
-        print("[p3-tg-cloud] Connected.")
+        print(f"[p3-tg-cloud] Connected (live) to {TG_HOST} — graph '{TG_GRAPH}'.")
         return _conn
     except Exception as e:
-        print(f"[p3-tg-cloud] Connection failed ({e}) — falling back to local-only retrieval")
-        _tg_available = False
+        _fail_or_fallback(f"connection/health-check failed ({str(e)[:120]})")
         return None
 
 
@@ -337,6 +376,11 @@ def _tg_expand(
             _tg_cache[cache_key] = (entities, docs)
             return entities, docs
     except Exception as e:
+        if P3_REQUIRE_TG:
+            raise RuntimeError(
+                f"[p3-tg-cloud] Live graph BFS failed mid-run (P3_REQUIRE_TG=1): {str(e)[:120]}. "
+                "Aborting rather than silently answering without the graph."
+            )
         print(f"[p3-tg-cloud] Query error ({e}), using seed entities only")
     return seed_names, set()
 
@@ -439,9 +483,11 @@ def _score_and_retrieve(
     for doc_id in candidate_docs:
         doc_ents = _doc_to_entities.get(doc_id, [])
         seed_hits = sum(1.0 for e in doc_ents if e in seed_entities)
-        chroma_boost = 5.0 if doc_id in chroma_ids else 0.0
+        chroma_boost = CHROMA_BOOST if doc_id in chroma_ids else 0.0
         title_boost = 3.5 if doc_id in title_ids else 0.0
-        graph_boost = 0.5 if doc_id in graph_doc_ids else 0.0
+        # Reviewer fix #1b: graph-returned docs now carry a real, configurable weight
+        # (GRAPH_BOOST, default 4.0 ≈ chroma) instead of a decorative 0.5.
+        graph_boost = GRAPH_BOOST if doc_id in graph_doc_ids else 0.0
 
         wh_boost = 0.0
         if expected_types and _entity_types:
@@ -528,14 +574,19 @@ def run_single(
         title_ids = f_title.result()
 
     seed_entities = {*ner_seeds, *chroma_seeds}
-    # Type filter for "where"/"who" questions reduces BFS noise
-    expand_types = _trusted_expand_types(question)
-    expanded, graph_doc_ids = _tg_expand(
-        list(seed_entities),
-        num_hops=NUM_HOPS,
-        top_k=15,
-        expand_types=expand_types,
-    )
+    # Ablation (reviewer): P3_DISABLE_GRAPH fully bypasses the graph so the
+    # graph-OFF arm truly has no BFS docs, no expanded entities, no triples.
+    if P3_DISABLE_GRAPH:
+        expanded, graph_doc_ids = [], set()
+    else:
+        # Type filter for "where"/"who" questions reduces BFS noise
+        expand_types = _trusted_expand_types(question)
+        expanded, graph_doc_ids = _tg_expand(
+            list(seed_entities),
+            num_hops=NUM_HOPS,
+            top_k=15,
+            expand_types=expand_types,
+        )
 
     expected_types = _expected_answer_types(question)
     candidates = _score_and_retrieve(
@@ -550,8 +601,16 @@ def run_single(
     prompt = _build_prompt(question, retrieved, triples=triples)
     with MetricsTimer("Pipeline 3: GraphRAG (TigerGraph Cloud)", question) as timer:
         answer, _ = get_llm_response(prompt)
-    metrics = timer.record_manual(prompt, answer, retrieved_chunks=len(retrieved))
+    # Reviewer fix #2b: report the chunks ACTUALLY placed in the prompt
+    # (retrieved[:MAX_CONTEXT_CHUNKS]), not the full reranked candidate pool.
+    n_in_prompt = len(retrieved[:MAX_CONTEXT_CHUNKS])
+    metrics = timer.record_manual(prompt, answer, retrieved_chunks=n_in_prompt)
     metrics.latency_seconds = round(time.perf_counter() - t_start, 3)  # true end-to-end
+    # Reviewer fix #1c: stamp live-graph provenance onto the per-question record.
+    metrics.tg_live = bool(_tg_available) and not P3_DISABLE_GRAPH
+    metrics.tg_host = TG_HOST if metrics.tg_live else ""
+    metrics.graph_doc_ids = sorted(graph_doc_ids)
+    metrics.graph_entity_count = len(expanded)
     return metrics
 
 

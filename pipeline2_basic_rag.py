@@ -45,7 +45,7 @@ def run_single(question: str, vectorstore: Chroma) -> CallMetrics:
     if P2_RERANK:
         # MMR pulls a diverse candidate pool (good for 2-hop questions that need
         # chunks from two different articles), then a cross-encoder reranks them
-        # and we keep the top TOP_K for the prompt.
+        # and we keep the top CONTEXT_NUM_CHUNKS for the prompt.
         retriever = vectorstore.as_retriever(
             search_type="mmr",
             search_kwargs={"k": RERANK_POOL, "fetch_k": RERANK_POOL * 3, "lambda_mult": 0.7},
@@ -57,12 +57,16 @@ def run_single(question: str, vectorstore: Chroma) -> CallMetrics:
             ranked = [d for _, d in sorted(zip(scores, candidates), key=lambda x: -x[0])]
         else:
             ranked = candidates
-        context_chunks = [d.page_content for d in ranked[:config.TOP_K]]
+        # Equal-context budget (reviewer fix #2): same item count + same per-item
+        # char cap as GraphRAG, so neither pipeline is fed more text than the other.
+        context_chunks = [d.page_content[:config.CONTEXT_CHUNK_CHARS]
+                          for d in ranked[:config.CONTEXT_NUM_CHUNKS]]
     else:
         retriever = vectorstore.as_retriever(
-            search_type="similarity", search_kwargs={"k": config.TOP_K},
+            search_type="similarity", search_kwargs={"k": config.CONTEXT_NUM_CHUNKS},
         )
-        context_chunks = [doc.page_content for doc in retriever.invoke(question)]
+        context_chunks = [doc.page_content[:config.CONTEXT_CHUNK_CHARS]
+                          for doc in retriever.invoke(question)]
 
     prompt = build_prompt(question, context_chunks)
     with MetricsTimer("Pipeline 2: Basic RAG", question) as timer:

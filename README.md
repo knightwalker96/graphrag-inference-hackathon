@@ -1,20 +1,29 @@
 # GraphRAG vs Basic RAG — Token-Efficient LLM Inference on TigerGraph
 
 **TigerGraph GraphRAG Inference Hackathon.** Three pipelines answer the same biomedical
-questions; the numbers tell the story: **GraphRAG cuts tokens ~50% vs Basic RAG while
-*improving* accuracy.**
+questions; the numbers tell the story: **GraphRAG cuts tokens ~32% vs Basic RAG while
+*improving* accuracy** — and every GraphRAG answer is produced against a **live TigerGraph
+Savanna** graph (verified per question; the run aborts rather than silently fall back).
 
 ## 🏆 Headline — BioASQ (biomedical multi-hop QA)
 
 | Pipeline | LLM-as-a-Judge | BERTScore | Avg tokens |
 |---|---|---|---|
-| P1 — LLM-Only | 90% | 0.388 | 182 |
-| P2 — Basic RAG | 86% | 0.355 | 3,375 |
-| **P3 — GraphRAG (TigerGraph)** | **94%** | **0.404** | **1,725 (−49%)** |
+| P1 — LLM-Only | 90% | 0.385 | 183 |
+| P2 — Basic RAG | 92% | 0.358 | 3,375 |
+| **P3 — GraphRAG (TigerGraph)** | **96%** | **0.402** | **2,288 (−32%)** |
 
-Basic RAG (vector) actually trails the raw LLM here (86% vs 90%) — vector search retrieves
-similar chunks but can't reason across relationships. **GraphRAG's multi-hop graph traversal
-lifts accuracy to 94% at half the tokens** — capturing what vector search misses.
+All three run the **same** answering model (`gpt-4o-mini`) and the **same** LLM-judge.
+**GraphRAG leads on both accuracy metrics (96% judge, 0.402 BERTScore) while using 32% fewer
+tokens than Basic RAG** — its multi-hop graph traversal + entity-seeded retrieval surface the
+answer-bearing passages that pure vector search dilutes. The graph is queried live on every
+question (`tg_live_rate = 1.0` in the results file), and Pipeline 3 refuses to produce a
+result if TigerGraph is unreachable.
+
+> **Fair-comparison note.** Basic RAG and GraphRAG use the same retrieval budget (10 context
+> chunks). At *identical* per-chunk size (10×2000 chars) GraphRAG still wins on accuracy
+> (94% vs 86% judge, same token count); the −32% token figure above additionally uses tighter
+> 800-char chunks for GraphRAG, which its precise retrieval tolerates without losing accuracy.
 
 ## The three pipelines
 

@@ -68,6 +68,14 @@ def mode_benchmark(n_questions: int = config.EVAL_SAMPLE_SIZE, include_p3: bool 
             p3_metrics = p3.run_batch(questions, vectorstore=vectorstore)
             p3_answers = [m.answer for m in p3_metrics]
         except Exception as e:
+            # Reviewer fix #1a: the live graph is mandatory BY DEFAULT — do NOT
+            # downgrade to a P1/P2-only result; abort the whole benchmark. Only a
+            # deliberate opt-out (P3_REQUIRE_TG=0) or the graph-OFF ablation
+            # (P3_DISABLE_GRAPH=1) allows the run to continue without the graph.
+            require_tg = (os.getenv("P3_REQUIRE_TG", "1") != "0"
+                          and os.getenv("P3_DISABLE_GRAPH", "0") == "0")
+            if require_tg:
+                raise
             print(f"[main] ⚠️  Pipeline 3 failed: {e}")
             include_p3 = False
 
@@ -110,6 +118,16 @@ def mode_benchmark(n_questions: int = config.EVAL_SAMPLE_SIZE, include_p3: bool 
             "top_k": config.TOP_K,
             "chunk_size": config.CHUNK_SIZE,
             "n_questions": len(eval_qa),
+            "ground_truth_path": config.GROUND_TRUTH_PATH,
+            # Reviewer-relevant knobs, recorded so each results file is self-documenting.
+            "context_num_chunks": config.CONTEXT_NUM_CHUNKS,
+            "context_chunk_chars": config.CONTEXT_CHUNK_CHARS,
+            "graph_boost": os.getenv("GRAPH_BOOST", "4.0"),
+            "graph_disabled": os.getenv("P3_DISABLE_GRAPH", "0") != "0",
+            "require_live_tg": (os.getenv("P3_REQUIRE_TG", "1") != "0"
+                                and os.getenv("P3_DISABLE_GRAPH", "0") == "0"),
+            "tigergraph_host": os.getenv("TIGERGRAPH_HOST", ""),
+            "tigergraph_graph": os.getenv("TIGERGRAPH_GRAPH", ""),
         },
         "performance": {
             "pipeline1": p1_agg,

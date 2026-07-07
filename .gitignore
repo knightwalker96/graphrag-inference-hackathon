@@ -53,3 +53,7 @@ results/*
 !results/benchmark_results.json
 SUBMISSION_RESULTS.md
 PROBLEM_STATEMENT.md
+# Team-only presentation docs (contain dataset token sizes — keep out of public repo)
+PROJECT_DOSSIER.md
+PRESENTATION_DECK.md
+QUIZ.md
